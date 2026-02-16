@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎭 Mafia Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Player Name Badge (shown during game) -->
+    <div id="playerNameBadge" class="player-name-badge" style="display: none;">
+        <span class="player-icon">👤</span>
+        <span id="currentPlayerName"></span>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>🎭 MAFIA</h1>
+            <p class="subtitle">The Classic Party Game</p>
+        </header>
+
+        <!-- Join Screen -->
+        <div id="joinScreen" class="screen active">
+            <div class="card">
+                <h2>Join Game</h2>
+                <input type="text" id="playerName" placeholder="Enter your name" maxlength="20">
+                <button id="joinBtn" class="btn btn-primary">Join Game</button>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobbyScreen" class="screen">
+            <div class="card">
+                <div class="status-badge" id="hostBadge" style="display: none;">👑 You are the Host</div>
+                <div class="host-info" id="hostInfo" style="display: none;">
+                    👑 Host: <span id="hostNameDisplay"></span>
+                </div>
+
+                <h2>Players Lobby</h2>
+                <div id="playersList" class="players-list"></div>
+
+                <div class="player-count">
+                    <span id="playerCount">0</span> players ready
+                </div>
+
+                <div class="button-group" id="hostControls">
+                    <button id="startBtn" class="btn btn-success" style="display: none;">Start Game</button>
+                    <button id="resetBtn" class="btn btn-warning" style="display: none;">Reset Game</button>
+                    <button id="btnTransferHostLobby" class="btn btn-secondary" style="display: none;">Transfer Host</button>
+                </div>
+
+                <!-- Host Transfer Modal for Lobby -->
+                <div id="hostTransferModalLobby" class="modal">
+                    <div class="modal-content">
+                        <h3>Transfer Host Control</h3>
+                        <p>Select a player to become the new host:</p>
+                        <div id="hostTransferPlayerListLobby" class="transfer-player-list"></div>
+                        <button id="btnCancelTransferLobby" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <h3>Game Rules</h3>
+                    <ul>
+                        <li>👑 <strong>Host (God):</strong> Controls the game, doesn't play</li>
+                        <li>🩺 <strong>Doctor:</strong> 1 player - Saves one person each night</li>
+                        <li>🔍 <strong>Detective:</strong> 1 player - Investigates one person each night</li>
+                        <li>🔪 <strong>Mafia:</strong> 20% of players - Try to eliminate villagers</li>
+                        <li>👥 <strong>Villager:</strong> Remaining players - Find the mafia!</li>
+                    </ul>
+                    <p class="note">Minimum 5 people total (1 host + 4 players) required to start</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Role Reveal Screen -->
+        <div id="roleScreen" class="screen">
+            <div class="role-card">
+                <div class="role-reveal">
+                    <h2>Your Role Assignment</h2>
+                    <p class="role-instruction">Press the button to reveal your role. You can show/hide it anytime.</p>
+                    <p class="role-warning">⚠️ Make sure no one is watching your screen</p>
+                    <button id="btnRevealRole" class="btn btn-reveal">Reveal My Role</button>
+                    <div id="roleDisplay" class="role-display hidden-role-display"></div>
+                    <button id="btnPlayerReady" class="btn btn-success btn-large" style="display: none; margin-top: 20px;" disabled>
+                        I'm Ready
+                    </button>
+                    <p class="role-info" style="display: none; margin-top: 15px; color: #64748b; font-size: 0.9em;">
+                        Reveal your role first, then click "I'm Ready"
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pre-Game Waiting Screen (Host Only) -->
+        <div id="preGameWaitingScreen" class="screen">
+            <div class="card">
+                <h2>Waiting for Players</h2>
+                <p class="waiting-instruction">Players must reveal their roles and click "I'm Ready" before you can start.</p>
+
+                <div id="playerReadinessGrid" class="readiness-grid"></div>
+
+                <div id="readinessStatus" class="readiness-status">
+                    <span id="readyCountDisplay">0/0</span> players ready
+                </div>
+
+                <button id="btnStartNightPhase" class="btn btn-success btn-large" disabled>Start Night Phase</button>
+                <p class="note" id="startButtonNote">Button will enable when all players click "I'm Ready"</p>
+
+                <button id="btnBackToLobbyFromWaiting" class="btn btn-warning" style="margin-top: 20px;">Back to Lobby</button>
+                <p class="note">Cancel game start and return everyone to lobby</p>
+            </div>
+        </div>
+
+        <!-- God Control Panel (Host Only) -->
+        <div id="godScreen" class="screen">
+            <div class="god-panel">
+                <div class="game-status">
+                    <h2>God Panel - Round <span id="roundNumber">1</span></h2>
+                    <div class="phase-badge" id="currentPhase">Night Phase</div>
+                    <div class="god-controls-top">
+                        <button id="btnTransferHost" class="btn btn-secondary btn-sm">Transfer Host</button>
+                        <button id="btnResetGame" class="btn btn-danger btn-sm">Reset Game</button>
+                    </div>
+                </div>
+
+                <!-- Host Transfer Modal -->
+                <div id="hostTransferModal" class="modal">
+                    <div class="modal-content">
+                        <h3>Transfer Host Control</h3>
+                        <p>Select a player to become the new host (God):</p>
+                        <div id="hostTransferPlayerList" class="transfer-player-list"></div>
+                        <button id="btnCancelTransfer" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
+                <!-- Player Grid (Always Visible) -->
+                <div class="collapsible-section">
+                    <button class="collapsible-header" onclick="toggleSection('playerGridSection')">
+                        <span class="toggle-icon">▼</span> Player Status
+                    </button>
+                    <div id="playerGridSection" class="collapsible-content">
+                        <div class="player-grid" id="godPlayerGrid"></div>
+                    </div>
+                </div>
+
+                <!-- Night Phase Controls -->
+                <div id="nightControls" class="control-section">
+                    <div class="section-header">🌙 Night Phase Actions</div>
+                    <button id="btnWakeMafia" class="btn btn-danger">Wake Mafia</button>
+                    <div id="mafiaKillSelection" class="action-selection"></div>
+
+                    <button id="btnWakeDoctor" class="btn btn-success">Wake Doctor</button>
+                    <div id="doctorSaveSelection" class="action-selection"></div>
+
+                    <button id="btnWakeDetective" class="btn btn-primary">Wake Detective</button>
+                    <div id="detectiveInvestSelection" class="action-selection"></div>
+                    <div id="investigationResult" class="investigation-result"></div>
+
+                    <button id="btnStartDay" class="btn btn-warning btn-large">Start Day Phase</button>
+                </div>
+
+                <!-- Day Phase Controls -->
+                <div id="dayControls" class="control-section">
+                    <div class="section-header">☀️ Day Phase Actions</div>
+                    <div id="deathAnnouncement" class="announcement-center"></div>
+                    <div class="button-group">
+                        <button id="btnStartTentativeVoting" class="btn btn-primary">Start Tentative Voting</button>
+                        <button id="btnStartFinalVotingDirect" class="btn btn-warning">Start Final Voting (Skip Tentative)</button>
+                        <button id="btnStartNightFromDay" class="btn btn-secondary">Start Next Night</button>
+                    </div>
+                </div>
+
+                <!-- Voting Controls -->
+                <div id="votingControls" class="control-section">
+                    <div class="section-header">🗳️ Voting Phase</div>
+                    <div class="timer-display" id="timerDisplay" style="display: none;"></div>
+                    <div class="button-group">
+                        <button id="btnStartTimer" class="btn btn-secondary" style="display: none;">⏱️ Start Timer (2 min)</button>
+                        <button id="btnExtendTimer" class="btn btn-secondary" style="display: none;">Extend Timer (+60s)</button>
+                    </div>
+                    <div id="voteResults" class="vote-results"></div>
+                    <div class="button-group">
+                        <button id="btnStartFinalVoting" class="btn btn-warning">Start Final Voting</button>
+                        <button id="btnEndVoting" class="btn btn-danger">End Voting & Eliminate</button>
+                    </div>
+                </div>
+
+                <!-- Collapsible History Log -->
+                <div class="collapsible-section">
+                    <button class="collapsible-header" onclick="toggleSection('historySection')">
+                        <span class="toggle-icon">▶</span> Game History
+                    </button>
+                    <div id="historySection" class="collapsible-content collapsed">
+                        <div class="history-log" id="historyLog"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player Night Screen -->
+        <div id="playerNightScreen" class="screen">
+            <div class="card">
+                <h2>Night Phase - Round <span id="nightRoundNumber">1</span></h2>
+                <div class="sleep-message">
+                    <p class="large-emoji">😴</p>
+                    <p>Everyone close your eyes...</p>
+                    <p class="note">God will guide the night actions</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player Day Screen -->
+        <div id="playerDayScreen" class="screen">
+            <div class="card">
+                <h2>Day Phase - Round <span id="dayRoundNumber">1</span></h2>
+
+                <div id="playerDeathAnnouncement" class="announcement-center"></div>
+
+                <div class="player-status-grid" id="playerStatusGrid"></div>
+
+                <div id="discussionPhase" class="discussion-phase">
+                    <p>Discuss and find the Mafia!</p>
+                </div>
+
+                <button id="btnShowMyRoleDay" class="btn btn-secondary btn-reveal-role">👁️ Reveal My Role</button>
+                <div id="myRoleDisplayDay" class="my-role-display"></div>
+            </div>
+        </div>
+
+        <!-- Voting Screen -->
+        <div id="votingScreen" class="screen">
+            <div class="card">
+                <h2 id="votingTitle">Tentative Voting</h2>
+
+                <div class="timer-display" id="playerTimerDisplay"></div>
+
+                <div id="myVotesReceived" class="my-votes-received" style="display: none;">
+                    <div class="my-votes-header">
+                        <span class="my-votes-icon">🎯</span>
+                        <span class="my-votes-count">You received <strong id="myVotesCount">0</strong> votes</span>
+                    </div>
+                    <div id="myVotersList" class="my-voters-list"></div>
+                </div>
+
+                <div class="voting-grid" id="votingGrid"></div>
+
+                <div id="playerVoteStatus" class="vote-status">
+                    Your vote: <span id="yourVote">Not voted</span>
+                </div>
+
+                <button id="btnShowMyRoleVoting" class="btn btn-secondary btn-reveal-role">👁️ Reveal My Role</button>
+                <div id="myRoleDisplayVoting" class="my-role-display"></div>
+            </div>
+        </div>
+
+        <!-- Vote Details Modal -->
+        <div id="voteDetailsModal" class="modal" style="display: none;">
+            <div class="modal-content vote-details-modal">
+                <h3 id="voteDetailsPlayerName">Votes for Player</h3>
+                <div id="voteDetailsList" class="vote-details-list"></div>
+                <button id="btnCloseVoteDetails" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+
+        <!-- Reset Game Confirmation Modal -->
+        <div id="resetGameModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Reset Game?</h3>
+                <p class="warning-text">⚠️ This will end the current game and send all players back to the lobby.</p>
+                <p>All progress will be lost. Are you sure?</p>
+                <div class="button-group">
+                    <button id="btnConfirmReset" class="btn btn-danger">Yes, Reset Game</button>
+                    <button id="btnCancelReset" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Spectator Screen (Eliminated Players) -->
+        <div id="spectatorScreen" class="screen">
+            <div class="card">
+                <h2>You were eliminated</h2>
+                <p class="your-role">Your role was: <span id="spectatorRole"></span></p>
+
+                <div class="spectator-status">
+                    <h3>Game Status - Round <span id="spectatorRound">1</span></h3>
+                    <div id="spectatorPlayerGrid" class="player-status-grid"></div>
+                </div>
+
+                <div class="spectator-history">
+                    <h3>Game Events</h3>
+                    <div id="spectatorHistory" class="history-log"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="screen">
+            <div class="card">
+                <h2>Game Over!</h2>
+                <div class="winner-announcement" id="winnerAnnouncement"></div>
+
+                <div id="finalRoles" class="final-roles"></div>
+
+                <div class="final-history">
+                    <h3>Game Summary</h3>
+                    <div id="finalHistory" class="history-log"></div>
+                </div>
+
+                <div id="hostNewGameControls" style="display: none; margin-top: 20px;">
+                    <p class="host-game-over-msg">As the host, you can start a new game:</p>
+                    <button id="btnReturnToLobby" class="btn btn-success btn-large">Return to Lobby & Start New Game</button>
+                </div>
+
+                <div id="playerWaitingMsg" style="display: none; margin-top: 20px;">
+                    <p class="waiting-msg">Waiting for host to start a new game...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game In Progress Screen -->
+        <div id="gameScreen" class="screen">
+            <div class="card">
+                <h2>Game in Progress</h2>
+                <div class="game-info">
+                    <p>The game has started!</p>
+                    <button id="revealRoleBtn" class="btn btn-secondary">Show My Role</button>
+                    <div id="hiddenRole" class="hidden-role"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
