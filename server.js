@@ -29,6 +29,9 @@ let gameState = {
   tiedCandidates: [], // array of player IDs who are tied (for revote)
   revoteCount: 0 // track number of revotes
 };
+let gameSettings = {
+  allowSpectatorView: false  // Default: spectator view disabled for security
+};
 let timerInterval = null;
 
 // Get local IP address
@@ -90,7 +93,8 @@ io.on('connection', (socket) => {
         phase: gameState.phase,
         round: gameState.round,
         players: players,
-        deathInfo: null
+        deathInfo: null,
+        gameSettings: gameSettings
       });
 
       // Send their role back to them
@@ -177,6 +181,9 @@ io.on('connection', (socket) => {
     }
 
     gameStarted = true;
+    gameSettings = {
+      allowSpectatorView: false
+    };
     assignRoles();
 
     // Send each player their role
@@ -268,7 +275,8 @@ io.on('connection', (socket) => {
         doctorAlive: doctor?.isAlive || false,
         detectiveAlive: detective?.isAlive || false,
         mafiaCount: aliveMafia
-      }
+      },
+      gameSettings: gameSettings
     });
 
     console.log(`Night ${gameState.round} started`);
@@ -332,7 +340,8 @@ io.on('connection', (socket) => {
     }
 
     gameState.currentNightAction = 'detective';
-    const eligiblePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
+    // Detective cannot investigate themselves - exclude detective from eligible players
+    const eligiblePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God' && p.role !== 'Detective');
     io.to(hostId).emit('nightActionUpdate', { action: 'detective', players: eligiblePlayers });
   });
 
@@ -361,6 +370,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('updateGameSettings', (settings) => {
+    if (socket.id !== hostId) return;
+
+    if (settings.hasOwnProperty('allowSpectatorView')) {
+      gameSettings.allowSpectatorView = settings.allowSpectatorView;
+    }
+
+    io.emit('gameSettingsUpdate', gameSettings);
+    console.log('Game settings updated:', gameSettings);
+  });
+
   socket.on('godStartDay', () => {
     if (socket.id !== hostId) return;
 
@@ -382,7 +402,8 @@ io.on('connection', (socket) => {
       phase: 'day',
       round: gameState.round,
       players: players,
-      deathInfo
+      deathInfo,
+      gameSettings: gameSettings
     });
 
     // Check win condition after a delay to allow death announcement to be seen
@@ -402,6 +423,11 @@ io.on('connection', (socket) => {
   socket.on('godStartTentativeVoting', () => {
     if (socket.id !== hostId) return;
 
+    // Clear any existing timer when starting new voting phase
+    clearTimer();
+    gameState.timerEndTime = null;
+    gameState.timerDuration = 0;
+
     gameState.phase = 'tentativeVoting';
     gameState.voteType = 'tentative';
     gameState.votes = {};
@@ -409,7 +435,8 @@ io.on('connection', (socket) => {
     io.emit('phaseUpdate', {
       phase: 'tentativeVoting',
       round: gameState.round,
-      players: players
+      players: players,
+      gameSettings: gameSettings
     });
 
     console.log('Tentative voting started');
@@ -418,6 +445,11 @@ io.on('connection', (socket) => {
   socket.on('godStartFinalVoting', (data) => {
     if (socket.id !== hostId) return;
 
+    // Clear any existing timer when starting new voting phase
+    clearTimer();
+    gameState.timerEndTime = null;
+    gameState.timerDuration = 0;
+
     gameState.phase = 'finalVoting';
     gameState.voteType = 'final';
     gameState.votes = {};
@@ -425,7 +457,8 @@ io.on('connection', (socket) => {
     io.emit('phaseUpdate', {
       phase: 'finalVoting',
       round: gameState.round,
-      players: players
+      players: players,
+      gameSettings: gameSettings
     });
 
     console.log('Final voting started (no timer)');
@@ -870,6 +903,11 @@ function processVotingEnd() {
 
   // Check if this is a tie and we should revote
   if (tied.length > 1 && gameState.voteType === 'final' && gameState.revoteCount < 3) {
+    // Clear any existing timer when starting new voting phase
+    clearTimer();
+    gameState.timerEndTime = null;
+    gameState.timerDuration = 0;
+
     // Initiate revote for tied candidates
     gameState.tiedCandidates = tied.map(t => t.playerId);
     gameState.revoteCount++;
@@ -886,7 +924,8 @@ function processVotingEnd() {
       phase: 'tieRevote',
       round: gameState.round,
       players: players,
-      tiedCandidates: gameState.tiedCandidates
+      tiedCandidates: gameState.tiedCandidates,
+      gameSettings: gameSettings
     });
 
     console.log('Tie detected, starting revote round', gameState.revoteCount, '(no auto-timer)');
@@ -936,7 +975,8 @@ function processVotingEnd() {
     phase: 'day',
     round: gameState.round,
     players,
-    votingCompleted: true
+    votingCompleted: true,
+    gameSettings: gameSettings
   });
   console.log('Voting ended');
 }

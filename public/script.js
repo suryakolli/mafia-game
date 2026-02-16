@@ -8,6 +8,7 @@ let isAlive = true;
 let currentPhase = 'lobby';
 let allPlayers = [];
 let myMafiaTeam = [];
+let currentGameSettings = { allowSpectatorView: false };
 
 // Role reveal state
 let roleRevealed = false;
@@ -457,6 +458,57 @@ if (btnExtendTimer) {
     });
 }
 
+// Lobby settings
+const chkAllowSpectatorView = document.getElementById('chkAllowSpectatorView');
+if (chkAllowSpectatorView) {
+    chkAllowSpectatorView.addEventListener('change', (e) => {
+        if (isHost) {
+            socket.emit('updateGameSettings', {
+                allowSpectatorView: e.target.checked
+            });
+        }
+    });
+}
+
+// Game settings modal
+const btnGameSettings = document.getElementById('btnGameSettings');
+const gameSettingsModal = document.getElementById('gameSettingsModal');
+
+if (btnGameSettings) {
+    btnGameSettings.addEventListener('click', () => {
+        const chkGame = document.getElementById('chkAllowSpectatorViewGame');
+        if (chkGame) chkGame.checked = currentGameSettings.allowSpectatorView;
+        if (gameSettingsModal) gameSettingsModal.style.display = 'flex';
+    });
+}
+
+// Close settings modal when clicking outside
+if (gameSettingsModal) {
+    gameSettingsModal.addEventListener('click', (e) => {
+        if (e.target === gameSettingsModal) {
+            gameSettingsModal.style.display = 'none';
+        }
+    });
+}
+
+const btnSaveSettings = document.getElementById('btnSaveSettings');
+if (btnSaveSettings) {
+    btnSaveSettings.addEventListener('click', () => {
+        const chkGame = document.getElementById('chkAllowSpectatorViewGame');
+        socket.emit('updateGameSettings', {
+            allowSpectatorView: chkGame.checked
+        });
+        gameSettingsModal.style.display = 'none';
+    });
+}
+
+const btnCancelSettings = document.getElementById('btnCancelSettings');
+if (btnCancelSettings) {
+    btnCancelSettings.addEventListener('click', () => {
+        gameSettingsModal.style.display = 'none';
+    });
+}
+
 if (btnEndVoting) {
     btnEndVoting.addEventListener('click', () => {
         socket.emit('godEndVoting');
@@ -586,6 +638,14 @@ socket.on('joinedGame', (data) => {
     switchScreen(lobbyScreen);
     updateHostDisplay();
 
+    // Show settings panel for host
+    if (isHost) {
+        const gameSettingsPanel = document.getElementById('gameSettingsPanel');
+        const btnGameSettings = document.getElementById('btnGameSettings');
+        if (gameSettingsPanel) gameSettingsPanel.style.display = 'block';
+        if (btnGameSettings) btnGameSettings.style.display = 'inline-block';
+    }
+
     // Update player name badge
     updatePlayerNameBadge();
 });
@@ -656,6 +716,10 @@ socket.on('roleAssigned', (roleData) => {
 socket.on('phaseUpdate', (data) => {
     currentPhase = data.phase;
     allPlayers = data.players;
+
+    if (data.gameSettings) {
+        currentGameSettings = data.gameSettings;
+    }
 
     const me = allPlayers.find(p => p.id === myPlayerId);
     if (me) {
@@ -782,6 +846,32 @@ socket.on('phaseUpdate', (data) => {
             document.getElementById('currentPhase').textContent = `${isTentative ? 'Tentative' : 'Final'} Voting`;
         }
         document.getElementById('currentPhase').className = 'phase-badge phase-voting';
+
+        // Clear previous voting state when entering new voting phase
+        const yourVote = document.getElementById('yourVote');
+        if (yourVote) {
+            yourVote.textContent = 'Not voted';
+        }
+
+        // Clear timer displays from previous voting phase
+        const timerDisplay = document.getElementById('timerDisplay');
+        const playerTimerDisplay = document.getElementById('playerTimerDisplay');
+
+        if (timerDisplay) {
+            timerDisplay.textContent = '';
+            timerDisplay.classList.remove('timer-warning');
+            timerDisplay.style.display = 'none';
+        }
+        if (playerTimerDisplay) {
+            playerTimerDisplay.textContent = '';
+            playerTimerDisplay.classList.remove('timer-warning');
+        }
+
+        // Reset vote received display for new voting phase
+        const myVotesReceived = document.getElementById('myVotesReceived');
+        if (myVotesReceived) {
+            myVotesReceived.style.display = 'none';
+        }
 
         if (isHost) {
             switchScreen(godScreen);
@@ -1020,6 +1110,12 @@ socket.on('voteUpdate', (data) => {
                     card.classList.remove('selected');
                 }
             });
+        } else {
+            // Reset vote display when no vote is found
+            if (yourVote) {
+                yourVote.textContent = 'Not voted';
+            }
+            votingCards.forEach(card => card.classList.remove('selected'));
         }
 
         // Show votes received by me
@@ -1028,8 +1124,10 @@ socket.on('voteUpdate', (data) => {
         const myVotersList = document.getElementById('myVotersList');
 
         if (myVotesReceived && myVotesCount && myVotersList) {
-            // Get votes I received
-            const myVoters = currentVoteDetails[myPlayerId] || [];
+            // Get votes I received with enhanced defensive checks
+            const myVoters = (currentVoteDetails && currentVoteDetails[myPlayerId])
+                ? currentVoteDetails[myPlayerId]
+                : [];
             const myVoteCount = myVoters.length;
 
             if (myVoteCount > 0) {
@@ -1129,6 +1227,19 @@ socket.on('historyUpdate', (history) => {
     if (historyLog) historyLog.innerHTML = historyForLog;
     if (spectatorHistory) spectatorHistory.innerHTML = historyForLog;
     if (finalHistory) finalHistory.innerHTML = historyForFinal;
+});
+
+socket.on('gameSettingsUpdate', (settings) => {
+    currentGameSettings = settings;
+
+    if (currentPhase !== 'lobby' && !isAlive && !isHost) {
+        updateSpectatorViewVisibility();
+    }
+
+    const chkLobby = document.getElementById('chkAllowSpectatorView');
+    const chkGame = document.getElementById('chkAllowSpectatorViewGame');
+    if (chkLobby) chkLobby.checked = settings.allowSpectatorView;
+    if (chkGame) chkGame.checked = settings.allowSpectatorView;
 });
 
 socket.on('gameOver', (data) => {
@@ -1239,6 +1350,15 @@ socket.on('gameReset', () => {
     currentPhase = 'lobby';
     myMafiaTeam = [];
 
+    // Reset game settings to default
+    currentGameSettings = { allowSpectatorView: false };
+
+    // Reset checkboxes
+    const chkLobby = document.getElementById('chkAllowSpectatorView');
+    const chkGame = document.getElementById('chkAllowSpectatorViewGame');
+    if (chkLobby) chkLobby.checked = false;
+    if (chkGame) chkGame.checked = false;
+
     // Reset role reveal state
     roleRevealed = false;
     hasSeenRole = false;
@@ -1255,6 +1375,7 @@ socket.on('gameReset', () => {
 
     switchScreen(lobbyScreen);
     updatePlayerNameBadge(); // Hide badge in lobby
+    updateHostDisplay(); // Update settings panel visibility
     showNotification('Returned to lobby. Host can start a new game!');
 });
 
@@ -1504,6 +1625,21 @@ function updateSpectatorView(data) {
         `;
         grid.appendChild(card);
     });
+
+    updateSpectatorViewVisibility();
+}
+
+function updateSpectatorViewVisibility() {
+    const fullView = document.getElementById('spectatorFullView');
+    const minimalView = document.getElementById('spectatorMinimalView');
+
+    if (currentGameSettings.allowSpectatorView) {
+        if (fullView) fullView.style.display = 'block';
+        if (minimalView) minimalView.style.display = 'none';
+    } else {
+        if (fullView) fullView.style.display = 'none';
+        if (minimalView) minimalView.style.display = 'block';
+    }
 }
 
 function showHostTransferModal() {
@@ -1680,6 +1816,7 @@ function updateHostDisplay() {
     const startBtn = document.getElementById('startBtn');
     const resetBtn = document.getElementById('resetBtn');
     const btnTransferHostLobby = document.getElementById('btnTransferHostLobby');
+    const gameSettingsPanel = document.getElementById('gameSettingsPanel');
 
     // Find the current host
     const currentHost = allPlayers.find(p => p.isHost);
@@ -1693,6 +1830,11 @@ function updateHostDisplay() {
         if (startBtn) startBtn.style.display = 'block';
         if (resetBtn) resetBtn.style.display = 'block';
         if (btnTransferHostLobby) btnTransferHostLobby.style.display = 'block';
+
+        // Show settings panel in lobby
+        if (gameSettingsPanel && currentPhase === 'lobby') {
+            gameSettingsPanel.style.display = 'block';
+        }
     } else {
         // You are not the host
         if (hostBadge) hostBadge.style.display = 'none';
@@ -1709,6 +1851,7 @@ function updateHostDisplay() {
         if (startBtn) startBtn.style.display = 'none';
         if (resetBtn) resetBtn.style.display = 'none';
         if (btnTransferHostLobby) btnTransferHostLobby.style.display = 'none';
+        if (gameSettingsPanel) gameSettingsPanel.style.display = 'none';
     }
 }
 

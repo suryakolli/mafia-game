@@ -49,6 +49,19 @@
                     <button id="btnTransferHostLobby" class="btn btn-secondary" style="display: none;">Transfer Host</button>
                 </div>
 
+                <div id="gameSettingsPanel" style="display: none; margin-top: 20px;">
+                    <h4>Game Settings</h4>
+                    <div style="margin: 10px 0;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="chkAllowSpectatorView" style="margin-right: 10px;">
+                            <span>Allow eliminated players to spectate (view game state & history)</span>
+                        </label>
+                        <p style="font-size: 0.85em; color: #64748b; margin-left: 26px; margin-top: 5px;">
+                            Default: Disabled. Eliminated players only see "You are eliminated" until game ends.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- Host Transfer Modal for Lobby -->
                 <div id="hostTransferModalLobby" class="modal">
                     <div class="modal-content">
@@ -119,8 +132,29 @@
                     <h2>God Panel - Round <span id="roundNumber">1</span></h2>
                     <div class="phase-badge" id="currentPhase">Night Phase</div>
                     <div class="god-controls-top">
+                        <button id="btnGameSettings" class="btn btn-secondary btn-sm">⚙️ Settings</button>
                         <button id="btnTransferHost" class="btn btn-secondary btn-sm">Transfer Host</button>
                         <button id="btnResetGame" class="btn btn-danger btn-sm">Reset Game</button>
+                    </div>
+                </div>
+
+                <!-- Settings Modal -->
+                <div id="gameSettingsModal" class="modal">
+                    <div class="modal-content">
+                        <h3>Game Settings</h3>
+                        <div style="margin: 15px 0;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="chkAllowSpectatorViewGame" style="margin-right: 10px;">
+                                <span>Allow eliminated players to spectate (view game state & history)</span>
+                            </label>
+                            <p style="font-size: 0.85em; color: #64748b; margin-top: 5px;">
+                                When disabled (default), eliminated players only see "You are eliminated". Changes apply immediately.
+                            </p>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button id="btnSaveSettings" class="btn btn-primary">Save</button>
+                            <button id="btnCancelSettings" class="btn btn-secondary">Cancel</button>
+                        </div>
                     </div>
                 </div>
 
@@ -282,14 +316,25 @@
                 <h2>You were eliminated</h2>
                 <p class="your-role">Your role was: <span id="spectatorRole"></span></p>
 
-                <div class="spectator-status">
-                    <h3>Game Status - Round <span id="spectatorRound">1</span></h3>
-                    <div id="spectatorPlayerGrid" class="player-status-grid"></div>
+                <!-- Minimal view (default) -->
+                <div id="spectatorMinimalView">
+                    <p style="margin-top: 20px; color: #64748b; text-align: center;">
+                        You cannot view the game state while eliminated.
+                        <br><br>
+                        Wait for the game to end to see the final results.
+                    </p>
                 </div>
 
-                <div class="spectator-history">
-                    <h3>Game Events</h3>
-                    <div id="spectatorHistory" class="history-log"></div>
+                <!-- Full spectator view (only when enabled by host) -->
+                <div id="spectatorFullView" style="display: none;">
+                    <div class="spectator-status">
+                        <h3>Game Status - Round <span id="spectatorRound">1</span></h3>
+                        <div id="spectatorPlayerGrid" class="player-status-grid"></div>
+                    </div>
+                    <div class="spectator-history">
+                        <h3>Game Events</h3>
+                        <div id="spectatorHistory" class="history-log"></div>
+                    </div>
                 </div>
             </div>
         </div>
