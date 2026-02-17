@@ -1833,9 +1833,10 @@ socket.on('reconnect', (attemptNumber) => {
     startHeartbeat(); // Ensure heartbeat is running
 
     // Re-sync with server if we were in a game
-    if (myPlayerName && myPlayerId) {
-        // Server will automatically handle reconnection via joinedGame event
-        console.log('Reconnected as', myPlayerName);
+    if (myPlayerName) {
+        // Emit joinGame to let server know who we are and get latest state
+        console.log('Re-syncing with server as', myPlayerName);
+        socket.emit('joinGame', myPlayerName);
     }
 });
 

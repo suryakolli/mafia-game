@@ -142,16 +142,50 @@ io.on('connection', (socket) => {
       }
 
       // Send current phase
-      // If in day phase: prioritize elimination info over death info
-      // If elimination just happened, send votingCompleted flag instead of deathInfo
-      socket.emit('phaseUpdate', {
-        phase: gameState.phase,
-        round: gameState.round,
-        players: players,
-        deathInfo: (gameState.phase === 'day' && !gameState.lastEliminationInfo) ? gameState.lastDeathInfo : null,
-        votingCompleted: gameState.phase === 'day' && gameState.lastEliminationInfo ? true : false,
-        gameSettings: gameSettings
-      });
+      // Special handling for gameOver phase - send full game over data
+      if (gameState.phase === 'gameOver') {
+        // Find winner from history or determine from current state
+        const gameOverEvent = gameState.history.find(e => e.type === 'gameOver');
+        let winner = 'draw';
+        let reason = 'Game ended';
+
+        // Determine winner from current player state if not in history
+        const alivePlayers = players.filter(p => p.isAlive && p.role !== 'God');
+        const mafiaCount = alivePlayers.filter(p => p.role === 'Mafia').length;
+        const villagerCount = alivePlayers.length - mafiaCount;
+
+        if (mafiaCount >= villagerCount && mafiaCount > 0) {
+          winner = 'mafia';
+          reason = 'Mafia equals or outnumbers villagers';
+        } else if (mafiaCount === 0) {
+          winner = 'villagers';
+          reason = 'All Mafia eliminated';
+        }
+
+        socket.emit('gameOver', {
+          winner,
+          reason,
+          players: players.map(p => ({
+            id: p.id,
+            name: p.name,
+            role: p.role,
+            isAlive: p.isAlive
+          })),
+          history: gameState.history
+        });
+      } else {
+        // For other phases, send phaseUpdate
+        // If in day phase: prioritize elimination info over death info
+        // If elimination just happened, send votingCompleted flag instead of deathInfo
+        socket.emit('phaseUpdate', {
+          phase: gameState.phase,
+          round: gameState.round,
+          players: players,
+          deathInfo: (gameState.phase === 'day' && !gameState.lastEliminationInfo) ? gameState.lastDeathInfo : null,
+          votingCompleted: gameState.phase === 'day' && gameState.lastEliminationInfo ? true : false,
+          gameSettings: gameSettings
+        });
+      }
 
       // Send their role back to them
       if (existingPlayer.role) {
