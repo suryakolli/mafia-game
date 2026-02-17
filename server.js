@@ -18,12 +18,15 @@ const io = socketIO(server, {
     methods: ["GET", "POST"],
     credentials: true
   },
-  // Mobile-friendly timeouts to prevent disconnections
-  pingTimeout: 60000,      // Wait 60 seconds for ping response before disconnecting
-  pingInterval: 25000,     // Send ping every 25 seconds to keep connection alive
+  // Aggressive timeouts to prevent disconnections on mobile
+  pingTimeout: 120000,     // Wait 2 minutes for ping response before disconnecting
+  pingInterval: 15000,     // Send ping every 15 seconds to keep connection alive
   upgradeTimeout: 30000,   // Time to wait for upgrade
   allowUpgrades: true,
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  // Additional stability options
+  connectTimeout: 45000,   // Connection timeout
+  perMessageDeflate: false // Disable compression for better mobile performance
 });
 
 app.use(express.static('public'));
@@ -68,6 +71,12 @@ function getLocalIP() {
 
 io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
+
+  // Handle heartbeat to keep connection alive
+  socket.on('heartbeat', (data) => {
+    // Respond to heartbeat to keep connection active
+    socket.emit('heartbeat_ack', { timestamp: Date.now() });
+  });
 
   socket.on('joinGame', (playerName) => {
     // Check if player is reconnecting (same name, game in progress)

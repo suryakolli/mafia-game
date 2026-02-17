@@ -18,6 +18,94 @@ const socket = io(BACKEND_URL, {
     forceNew: false
 });
 
+// Heartbeat mechanism to keep connection alive
+let heartbeatInterval = null;
+
+function startHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+    // Send heartbeat every 10 seconds to keep connection alive
+    heartbeatInterval = setInterval(() => {
+        if (socket.connected) {
+            socket.emit('heartbeat', { playerId: myPlayerId, timestamp: Date.now() });
+        }
+    }, 10000);
+}
+
+function stopHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+}
+
+// Handle page visibility changes (when user switches tabs or apps)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        console.log('Page hidden - keeping connection alive');
+        // Page is hidden (backgrounded) - keep pinging
+        startHeartbeat();
+    } else {
+        console.log('Page visible - reconnecting if needed');
+        // Page is visible again - ensure we're connected
+        if (!socket.connected && myPlayerName) {
+            console.log('Attempting to reconnect...');
+            socket.connect();
+        }
+    }
+});
+
+// Prevent mobile devices from closing connection on sleep
+window.addEventListener('beforeunload', (e) => {
+    // Only warn if player is in an active game
+    if (gameStarted && currentPhase !== 'lobby') {
+        e.preventDefault();
+        e.returnValue = 'You are in an active game. Are you sure you want to leave?';
+        return e.returnValue;
+    }
+});
+
+// Start heartbeat when page loads
+startHeartbeat();
+
+// Wake Lock API to prevent mobile devices from sleeping during game
+let wakeLock = null;
+
+async function requestWakeLock() {
+    if ('wakeLock' in navigator && gameStarted) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Wake Lock activated - screen will stay on');
+
+            wakeLock.addEventListener('release', () => {
+                console.log('Wake Lock released');
+            });
+        } catch (err) {
+            console.log('Wake Lock error:', err);
+        }
+    }
+}
+
+async function releaseWakeLock() {
+    if (wakeLock !== null) {
+        try {
+            await wakeLock.release();
+            wakeLock = null;
+            console.log('Wake Lock released manually');
+        } catch (err) {
+            console.log('Wake Lock release error:', err);
+        }
+    }
+}
+
+// Request wake lock when game starts
+document.addEventListener('visibilitychange', async () => {
+    if (!document.hidden && gameStarted) {
+        // Re-request wake lock when page becomes visible
+        await requestWakeLock();
+    }
+});
+
 let isHost = false;
 let myRole = null;
 let myPlayerId = null;
@@ -708,6 +796,9 @@ socket.on('roleAssigned', (roleData) => {
 
     gameStarted = true;
 
+    // Request wake lock to keep device awake during game
+    requestWakeLock();
+
     // If host (God role), show pre-game waiting screen
     if (myRole === 'God') {
         // Only switch to pre-game screen if in lobby phase
@@ -1269,6 +1360,9 @@ socket.on('gameSettingsUpdate', (settings) => {
 });
 
 socket.on('gameOver', (data) => {
+    // Release wake lock when game is over
+    releaseWakeLock();
+
     switchScreen(gameOverScreen);
 
     const winnerAnnouncement = document.getElementById('winnerAnnouncement');
@@ -1375,6 +1469,9 @@ socket.on('gameReset', () => {
     gameStarted = false;
     currentPhase = 'lobby';
     myMafiaTeam = [];
+
+    // Release wake lock when game ends
+    releaseWakeLock();
 
     // Reset game settings to default
     currentGameSettings = { allowSpectatorView: false };
@@ -1508,6 +1605,7 @@ socket.on('error', (message) => {
 // Enhanced reconnection handling for mobile devices
 socket.on('disconnect', (reason) => {
     console.log('Disconnected:', reason);
+    stopHeartbeat(); // Stop heartbeat when disconnected
 
     // Don't immediately kick to join screen - show reconnecting message
     if (reason === 'io server disconnect') {
@@ -1517,19 +1615,39 @@ socket.on('disconnect', (reason) => {
     } else {
         // Network issue or mobile backgrounding - try to reconnect
         showNotification('Connection lost. Reconnecting...', 'warning');
+
+        // Ensure we try to reconnect
+        setTimeout(() => {
+            if (!socket.connected) {
+                console.log('Manual reconnection attempt...');
+                socket.connect();
+            }
+        }, 1000);
+    }
+});
+
+socket.on('connect', () => {
+    console.log('Connected to server:', socket.id);
+    startHeartbeat(); // Start heartbeat when connected
+
+    // If we have player info, this is a reconnection
+    if (myPlayerName && gameStarted) {
+        console.log('Reconnecting as', myPlayerName);
+        showNotification('Connection established!', 'success');
     }
 });
 
 socket.on('reconnect_attempt', (attemptNumber) => {
     console.log('Reconnection attempt:', attemptNumber);
-    if (attemptNumber === 1) {
-        showNotification('Reconnecting...', 'info');
+    if (attemptNumber % 5 === 1) { // Show notification every 5 attempts
+        showNotification(`Reconnecting... (attempt ${attemptNumber})`, 'info');
     }
 });
 
 socket.on('reconnect', (attemptNumber) => {
     console.log('Reconnected after', attemptNumber, 'attempts');
     showNotification('Reconnected successfully!', 'success');
+    startHeartbeat(); // Ensure heartbeat is running
 
     // Re-sync with server if we were in a game
     if (myPlayerName && myPlayerId) {
@@ -1545,7 +1663,14 @@ socket.on('reconnect_error', (error) => {
 socket.on('reconnect_failed', () => {
     console.log('Reconnection failed after all attempts');
     showNotification('Could not reconnect. Please refresh and rejoin.', 'error');
+    stopHeartbeat();
     setTimeout(() => switchScreen(joinScreen), 5000);
+});
+
+// Handle heartbeat acknowledgment
+socket.on('heartbeat_ack', (data) => {
+    // Connection is alive and healthy
+    console.log('Heartbeat acknowledged');
 });
 
 // Helper Functions
