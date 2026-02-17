@@ -5,7 +5,19 @@ const os = require('os');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+
+// CORS configuration for GitHub Pages
+const io = socketIO(server, {
+  cors: {
+    origin: [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "https://*.github.io" // Allow GitHub Pages
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
 app.use(express.static('public'));
 
@@ -1085,7 +1097,7 @@ function addToHistory(event) {
   io.emit('historyUpdate', gameState.history);
 }
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; // Use environment PORT for cloud platforms
 const localIP = getLocalIP();
 
 server.listen(PORT, '0.0.0.0', () => {
