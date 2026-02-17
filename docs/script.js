@@ -3,7 +3,7 @@
 // For production: use your Render.com backend URL
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? window.location.origin
-    : 'https://your-app-name.onrender.com'; // Replace with your actual Render URL
+    : 'https://mafia-game-x5pu.onrender.com'; // Replace with your actual Render URL
 
 const socket = io(BACKEND_URL);
 
