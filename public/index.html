@@ -25,6 +25,16 @@
                 <h2>Join Game</h2>
                 <input type="text" id="playerName" placeholder="Enter your name" maxlength="20">
                 <button id="joinBtn" class="btn btn-primary">Join Game</button>
+
+                <!-- Reconnect button (shown when game already started and player name is stored) -->
+                <div id="reconnectSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e2e8f0;">
+                    <p style="text-align: center; color: #64748b; margin-bottom: 15px;">
+                        Game already in progress. Reconnect as:
+                    </p>
+                    <button id="reconnectBtn" class="btn btn-success">
+                        <span style="font-size: 1.2em;">🔄</span> Reconnect as <span id="reconnectPlayerName" style="font-weight: bold;"></span>
+                    </button>
+                </div>
             </div>
         </div>
 

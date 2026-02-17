@@ -179,6 +179,9 @@ const gameOverScreen = document.getElementById('gameOverScreen');
 
 const playerNameInput = document.getElementById('playerName');
 const joinBtn = document.getElementById('joinBtn');
+const reconnectBtn = document.getElementById('reconnectBtn');
+const reconnectSection = document.getElementById('reconnectSection');
+const reconnectPlayerNameSpan = document.getElementById('reconnectPlayerName');
 const startBtn = document.getElementById('startBtn');
 const resetBtn = document.getElementById('resetBtn');
 const revealRoleBtn = document.getElementById('revealRoleBtn');
@@ -214,6 +217,26 @@ const hostTransferModalLobby = document.getElementById('hostTransferModalLobby')
 joinBtn.addEventListener('click', joinGame);
 playerNameInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') joinGame();
+});
+
+// Reconnect button handler
+if (reconnectBtn) {
+    reconnectBtn.addEventListener('click', () => {
+        const savedName = localStorage.getItem('mafiaGamePlayerName');
+        if (savedName) {
+            myPlayerName = savedName;
+            socket.emit('joinGame', savedName);
+        }
+    });
+}
+
+// Check for saved player name on page load
+window.addEventListener('load', () => {
+    const savedName = localStorage.getItem('mafiaGamePlayerName');
+    if (savedName && reconnectPlayerNameSpan) {
+        playerNameInput.value = savedName; // Pre-fill the name input
+        reconnectPlayerNameSpan.textContent = savedName;
+    }
 });
 
 startBtn.addEventListener('click', () => {
@@ -355,6 +378,8 @@ function joinGame() {
     }
 
     myPlayerName = name;
+    // Store name in localStorage for reconnection
+    localStorage.setItem('mafiaGamePlayerName', name);
     socket.emit('joinGame', name);
 }
 
@@ -966,9 +991,15 @@ socket.on('phaseUpdate', (data) => {
             } else if (data.deathInfo && data.deathInfo.died) {
                 deathAnnouncement.innerHTML = `<div class="announcement-death-big">💀 ${data.deathInfo.playerName} was killed during the night</div>`;
                 deathAnnouncement.style.display = 'block';
+
+                // Show center announcement for reconnecting host
+                showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
             } else if (data.deathInfo && !data.deathInfo.died) {
                 deathAnnouncement.innerHTML = '<div class="announcement-safe-big">✅ No one died during the night</div>';
                 deathAnnouncement.style.display = 'block';
+
+                // Show center announcement for reconnecting host
+                showCenterAnnouncement('No one died during the night', 'safe');
             } else {
                 deathAnnouncement.style.display = 'none';
             }
@@ -984,9 +1015,15 @@ socket.on('phaseUpdate', (data) => {
             } else if (data.deathInfo && data.deathInfo.died) {
                 playerDeathAnnouncement.innerHTML = `<div class="announcement-death-big">💀 ${data.deathInfo.playerName} was killed during the night</div>`;
                 playerDeathAnnouncement.style.display = 'block';
+
+                // Show center announcement for reconnecting players
+                showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
             } else if (data.deathInfo && !data.deathInfo.died) {
                 playerDeathAnnouncement.innerHTML = '<div class="announcement-safe-big">✅ No one died during the night</div>';
                 playerDeathAnnouncement.style.display = 'block';
+
+                // Show center announcement for reconnecting players
+                showCenterAnnouncement('No one died during the night', 'safe');
             } else {
                 playerDeathAnnouncement.style.display = 'none';
             }
@@ -1552,7 +1589,16 @@ socket.on('gameReset', () => {
 });
 
 socket.on('gameAlreadyStarted', () => {
-    showNotification('Game already in progress. Please wait for next round.');
+    const savedName = localStorage.getItem('mafiaGamePlayerName');
+
+    if (savedName && reconnectSection) {
+        // Show reconnect section if we have a saved name
+        reconnectSection.style.display = 'block';
+        reconnectPlayerNameSpan.textContent = savedName;
+        showNotification('Game in progress. Use the reconnect button below.', 'info');
+    } else {
+        showNotification('Game already in progress. Please wait for next round.', 'warning');
+    }
 });
 
 socket.on('gamePaused', (data) => {
