@@ -760,8 +760,8 @@ function assignRoles() {
   // 1 Detective
   roles.push('Detective');
 
-  // 20% Mafia (at least 1, rounded)
-  const mafiaCount = Math.max(1, Math.round((totalPlayers - 2) * 0.2));
+  // 25% Mafia (at least 1, rounded)
+  const mafiaCount = Math.max(1, Math.round((totalPlayers - 2) * 0.25));
   for (let i = 0; i < mafiaCount; i++) {
     roles.push('Mafia');
   }
