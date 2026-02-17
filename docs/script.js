@@ -846,18 +846,28 @@ socket.on('joinedGame', (data) => {
         myPlayerName = data.playerName;
         isAlive = data.isAlive;
 
-        // Set flag for auto-reconnect after reload
-        localStorage.setItem('mafiaGameAutoReconnect', 'true');
+        // Check if we're already in an auto-reconnect flow to prevent infinite reload loop
+        const autoReconnectFlag = localStorage.getItem('mafiaGameAutoReconnect');
 
-        // Show reconnection message and reload
-        showNotification('Reconnected! Reloading to sync game state...', 'success');
+        if (autoReconnectFlag === 'true') {
+            // We already reloaded once - clear the flag and proceed normally
+            localStorage.removeItem('mafiaGameAutoReconnect');
+            isReconnecting = false;
+            // Don't reload again - just continue with normal flow
+        } else {
+            // First reconnection - set flag and reload
+            localStorage.setItem('mafiaGameAutoReconnect', 'true');
 
-        // Reload after short delay to show notification
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
+            // Show reconnection message and reload
+            showNotification('Reconnected! Reloading to sync game state...', 'success');
 
-        return; // Don't continue with normal join flow
+            // Reload after short delay to show notification
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+
+            return; // Don't continue with normal join flow
+        }
     } else {
         isReconnecting = false;
     }
