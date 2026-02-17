@@ -243,8 +243,8 @@ window.addEventListener('load', () => {
 
     // Auto-reconnect if flag is set (after page reload from reconnection)
     if (autoReconnect === 'true' && savedName) {
-        // Clear the flag
-        localStorage.removeItem('mafiaGameAutoReconnect');
+        // DON'T clear the flag here - let joinedGame handler clear it after successful reconnect
+        // This prevents infinite reload loop
 
         // Auto-join after short delay to ensure socket connection is ready
         setTimeout(() => {
