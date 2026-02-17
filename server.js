@@ -141,12 +141,15 @@ io.on('connection', (socket) => {
         socket.emit('voteResult', gameState.lastEliminationInfo);
       }
 
-      // Send current phase with last death info if in day phase
+      // Send current phase
+      // If in day phase: prioritize elimination info over death info
+      // If elimination just happened, send votingCompleted flag instead of deathInfo
       socket.emit('phaseUpdate', {
         phase: gameState.phase,
         round: gameState.round,
         players: players,
-        deathInfo: gameState.phase === 'day' ? gameState.lastDeathInfo : null,
+        deathInfo: (gameState.phase === 'day' && !gameState.lastEliminationInfo) ? gameState.lastDeathInfo : null,
+        votingCompleted: gameState.phase === 'day' && gameState.lastEliminationInfo ? true : false,
         gameSettings: gameSettings
       });
 

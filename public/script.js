@@ -996,11 +996,12 @@ socket.on('phaseUpdate', (data) => {
             if (data.votingCompleted === true) {
                 deathAnnouncement.innerHTML = `<div class="announcement-next-round">🔄 Round ${data.round} completed. Ready to start next round.</div>`;
                 deathAnnouncement.style.display = 'block';
+                // Don't show center announcement - elimination announcement already shown from voteResult
             } else if (data.deathInfo && data.deathInfo.died) {
                 deathAnnouncement.innerHTML = `<div class="announcement-death-big">💀 ${data.deathInfo.playerName} was killed during the night</div>`;
                 deathAnnouncement.style.display = 'block';
 
-                // Show center announcement ONLY for reconnecting host
+                // Show center announcement ONLY for reconnecting host (and not if voting just completed)
                 if (wasReconnecting) {
                     showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
                 }
@@ -1008,7 +1009,7 @@ socket.on('phaseUpdate', (data) => {
                 deathAnnouncement.innerHTML = '<div class="announcement-safe-big">✅ No one died during the night</div>';
                 deathAnnouncement.style.display = 'block';
 
-                // Show center announcement ONLY for reconnecting host
+                // Show center announcement ONLY for reconnecting host (and not if voting just completed)
                 if (wasReconnecting) {
                     showCenterAnnouncement('No one died during the night', 'safe');
                 }
@@ -1024,11 +1025,12 @@ socket.on('phaseUpdate', (data) => {
             if (data.votingCompleted === true) {
                 playerDeathAnnouncement.innerHTML = `<div class="announcement-next-round">🔄 Round ${data.round} completed. Next round starting soon...</div>`;
                 playerDeathAnnouncement.style.display = 'block';
+                // Don't show center announcement - elimination announcement already shown from voteResult
             } else if (data.deathInfo && data.deathInfo.died) {
                 playerDeathAnnouncement.innerHTML = `<div class="announcement-death-big">💀 ${data.deathInfo.playerName} was killed during the night</div>`;
                 playerDeathAnnouncement.style.display = 'block';
 
-                // Show center announcement ONLY for reconnecting players
+                // Show center announcement ONLY for reconnecting players (and not if voting just completed)
                 if (wasReconnecting) {
                     showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
                 }
@@ -1036,7 +1038,7 @@ socket.on('phaseUpdate', (data) => {
                 playerDeathAnnouncement.innerHTML = '<div class="announcement-safe-big">✅ No one died during the night</div>';
                 playerDeathAnnouncement.style.display = 'block';
 
-                // Show center announcement ONLY for reconnecting players
+                // Show center announcement ONLY for reconnecting players (and not if voting just completed)
                 if (wasReconnecting) {
                     showCenterAnnouncement('No one died during the night', 'safe');
                 }
