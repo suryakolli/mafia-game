@@ -1,4 +1,22 @@
-const socket = io();
+// Configure backend server URL
+// For local development: use window.location.origin
+// For production: use your Render.com backend URL
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? window.location.origin
+    : 'https://mafia-game-x5pu.onrender.com'; // Replace with your actual Render URL
+
+// Socket.IO with aggressive reconnection for mobile devices
+const socket = io(BACKEND_URL, {
+    reconnection: true,
+    reconnectionDelay: 500,           // Start reconnecting after 500ms
+    reconnectionDelayMax: 5000,       // Max delay between reconnection attempts
+    reconnectionAttempts: Infinity,   // Never stop trying to reconnect
+    timeout: 20000,                   // Connection timeout (20 seconds)
+    transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
+    upgrade: true,
+    rememberUpgrade: true,
+    forceNew: false
+});
 
 let isHost = false;
 let myRole = null;
@@ -223,11 +241,19 @@ function showNotification(message, type = 'default') {
         notification.classList.add('notification-death');
     } else if (type === 'safe') {
         notification.classList.add('notification-safe');
+    } else if (type === 'error') {
+        notification.classList.add('notification-error');
+    } else if (type === 'warning') {
+        notification.classList.add('notification-warning');
+    } else if (type === 'info') {
+        notification.classList.add('notification-info');
+    } else if (type === 'success') {
+        notification.classList.add('notification-success');
     }
 
     setTimeout(() => {
         notification.classList.remove('show');
-    }, 5000); // Show for 5 seconds for death notifications
+    }, 5000);
 }
 
 function resetRoleScreenUI() {
@@ -1479,9 +1505,47 @@ socket.on('error', (message) => {
     showNotification(message);
 });
 
-socket.on('disconnect', () => {
-    showNotification('Disconnected from server');
-    switchScreen(joinScreen);
+// Enhanced reconnection handling for mobile devices
+socket.on('disconnect', (reason) => {
+    console.log('Disconnected:', reason);
+
+    // Don't immediately kick to join screen - show reconnecting message
+    if (reason === 'io server disconnect') {
+        // Server forcefully disconnected - likely kicked out
+        showNotification('Disconnected from server. Please rejoin.', 'error');
+        setTimeout(() => switchScreen(joinScreen), 3000);
+    } else {
+        // Network issue or mobile backgrounding - try to reconnect
+        showNotification('Connection lost. Reconnecting...', 'warning');
+    }
+});
+
+socket.on('reconnect_attempt', (attemptNumber) => {
+    console.log('Reconnection attempt:', attemptNumber);
+    if (attemptNumber === 1) {
+        showNotification('Reconnecting...', 'info');
+    }
+});
+
+socket.on('reconnect', (attemptNumber) => {
+    console.log('Reconnected after', attemptNumber, 'attempts');
+    showNotification('Reconnected successfully!', 'success');
+
+    // Re-sync with server if we were in a game
+    if (myPlayerName && myPlayerId) {
+        // Server will automatically handle reconnection via joinedGame event
+        console.log('Reconnected as', myPlayerName);
+    }
+});
+
+socket.on('reconnect_error', (error) => {
+    console.log('Reconnection error:', error);
+});
+
+socket.on('reconnect_failed', () => {
+    console.log('Reconnection failed after all attempts');
+    showNotification('Could not reconnect. Please refresh and rejoin.', 'error');
+    setTimeout(() => switchScreen(joinScreen), 5000);
 });
 
 // Helper Functions

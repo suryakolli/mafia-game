@@ -7,6 +7,7 @@ const app = express();
 const server = http.createServer(app);
 
 // CORS configuration for GitHub Pages
+// Enhanced Socket.IO config for mobile device stability
 const io = socketIO(server, {
   cors: {
     origin: [
@@ -16,7 +17,13 @@ const io = socketIO(server, {
     ],
     methods: ["GET", "POST"],
     credentials: true
-  }
+  },
+  // Mobile-friendly timeouts to prevent disconnections
+  pingTimeout: 60000,      // Wait 60 seconds for ping response before disconnecting
+  pingInterval: 25000,     // Send ping every 25 seconds to keep connection alive
+  upgradeTimeout: 30000,   // Time to wait for upgrade
+  allowUpgrades: true,
+  transports: ['websocket', 'polling']
 });
 
 app.use(express.static('public'));
