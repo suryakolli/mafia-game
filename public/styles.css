@@ -1968,3 +1968,20 @@ input[type="text"]:focus {
     font-weight: 600;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+
+/* Disconnected player badge */
+.disconnected-badge {
+    display: inline-block;
+    background: #f59e0b;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    margin-left: 8px;
+    animation: pulse-warning 2s infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}

@@ -5,17 +5,148 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
     ? window.location.origin
     : 'https://mafia-game-x5pu.onrender.com'; // Replace with your actual Render URL
 
+// Detect mobile devices
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Mobile gets more frequent heartbeat
+const HEARTBEAT_INTERVAL = isMobileDevice() ? 5000 : 10000;
+
 // Socket.IO with aggressive reconnection for mobile devices
 const socket = io(BACKEND_URL, {
     reconnection: true,
-    reconnectionDelay: 500,           // Start reconnecting after 500ms
-    reconnectionDelayMax: 5000,       // Max delay between reconnection attempts
+    reconnectionDelay: 300,           // Faster: 300ms (was 500ms)
+    reconnectionDelayMax: 3000,       // Faster: 3s (was 5s)
     reconnectionAttempts: Infinity,   // Never stop trying to reconnect
     timeout: 20000,                   // Connection timeout (20 seconds)
     transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
     upgrade: true,
     rememberUpgrade: true,
-    forceNew: false
+    forceNew: false,
+    randomizationFactor: 0.5          // Add jitter to prevent thundering herd
+});
+
+// Heartbeat mechanism to keep connection alive
+let heartbeatInterval = null;
+
+function startHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+    // Send heartbeat based on device type (mobile: 5s, desktop: 10s)
+    heartbeatInterval = setInterval(() => {
+        if (socket.connected) {
+            socket.emit('heartbeat', {
+                playerId: myPlayerId,
+                timestamp: Date.now(),
+                isMobile: isMobileDevice()
+            });
+        }
+    }, HEARTBEAT_INTERVAL);
+}
+
+function stopHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+}
+
+// Handle page visibility changes (when user switches tabs or apps)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        console.log('Page hidden - keeping connection alive');
+        // Page is hidden (backgrounded) - keep pinging
+        startHeartbeat();
+    } else {
+        console.log('Page visible - reconnecting if needed');
+        // Page is visible again - ensure we're connected
+        if (!socket.connected && myPlayerName) {
+            console.log('Attempting to reconnect...');
+            socket.connect();
+        }
+    }
+});
+
+// Prevent mobile devices from closing connection on sleep
+window.addEventListener('beforeunload', (e) => {
+    // Only warn if player is in an active game
+    if (gameStarted && currentPhase !== 'lobby') {
+        e.preventDefault();
+        e.returnValue = 'You are in an active game. Are you sure you want to leave?';
+        return e.returnValue;
+    }
+});
+
+// Start heartbeat when page loads
+startHeartbeat();
+
+// Initialize Web Worker for mobile devices
+let connectionWorker = null;
+
+function initConnectionWorker() {
+    if ('Worker' in window && isMobileDevice()) {
+        try {
+            connectionWorker = new Worker('connection-worker.js');
+
+            connectionWorker.addEventListener('message', (e) => {
+                if (e.data.type === 'SEND_HEARTBEAT' && socket.connected) {
+                    socket.emit('heartbeat', {
+                        playerId: myPlayerId,
+                        timestamp: e.data.timestamp,
+                        fromWorker: true
+                    });
+                }
+            });
+
+            connectionWorker.postMessage({
+                type: 'START_HEARTBEAT',
+                data: { interval: HEARTBEAT_INTERVAL }
+            });
+
+            console.log('Connection worker initialized');
+        } catch (err) {
+            console.warn('Worker init failed:', err);
+        }
+    }
+}
+
+// Wake Lock API to prevent mobile devices from sleeping during game
+let wakeLock = null;
+
+async function requestWakeLock() {
+    if ('wakeLock' in navigator && gameStarted) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Wake Lock activated - screen will stay on');
+
+            wakeLock.addEventListener('release', () => {
+                console.log('Wake Lock released');
+            });
+        } catch (err) {
+            console.log('Wake Lock error:', err);
+        }
+    }
+}
+
+async function releaseWakeLock() {
+    if (wakeLock !== null) {
+        try {
+            await wakeLock.release();
+            wakeLock = null;
+            console.log('Wake Lock released manually');
+        } catch (err) {
+            console.log('Wake Lock release error:', err);
+        }
+    }
+}
+
+// Request wake lock when game starts
+document.addEventListener('visibilitychange', async () => {
+    if (!document.hidden && gameStarted) {
+        // Re-request wake lock when page becomes visible
+        await requestWakeLock();
+    }
 });
 
 let isHost = false;
@@ -650,6 +781,9 @@ if (btnCancelTransferLobby) {
 socket.on('connect', () => {
     myPlayerId = socket.id;
     console.log('Connected with socket ID:', myPlayerId);
+
+    // Initialize connection worker on connect (for mobile)
+    initConnectionWorker();
 });
 
 socket.on('joinedGame', (data) => {
@@ -707,6 +841,9 @@ socket.on('roleAssigned', (roleData) => {
     }
 
     gameStarted = true;
+
+    // Request wake lock to keep device awake during game
+    requestWakeLock();
 
     // If host (God role), show pre-game waiting screen
     if (myRole === 'God') {
@@ -958,7 +1095,8 @@ socket.on('nightActionUpdate', (data) => {
         data.players.forEach(player => {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-danger';
-            btn.textContent = player.name;
+            btn.textContent = `${player.name}${player.isDisconnected ? ' ⚠️' : ''}`;
+            btn.title = player.isDisconnected ? 'Player is offline but can still be targeted' : '';
             btn.onclick = () => socket.emit('godMarkKill', player.id);
             selection.appendChild(btn);
         });
@@ -969,7 +1107,8 @@ socket.on('nightActionUpdate', (data) => {
         data.players.forEach(player => {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-success';
-            btn.textContent = player.name;
+            btn.textContent = `${player.name}${player.isDisconnected ? ' ⚠️' : ''}`;
+            btn.title = player.isDisconnected ? 'Player is offline but can still be targeted' : '';
             btn.onclick = () => socket.emit('godMarkSave', player.id);
             selection.appendChild(btn);
         });
@@ -980,7 +1119,8 @@ socket.on('nightActionUpdate', (data) => {
         data.players.forEach(player => {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-primary';
-            btn.textContent = player.name;
+            btn.textContent = `${player.name}${player.isDisconnected ? ' ⚠️' : ''}`;
+            btn.title = player.isDisconnected ? 'Player is offline but can still be targeted' : '';
             btn.onclick = () => socket.emit('godInvestigate', player.id);
             selection.appendChild(btn);
         });
@@ -1269,6 +1409,9 @@ socket.on('gameSettingsUpdate', (settings) => {
 });
 
 socket.on('gameOver', (data) => {
+    // Release wake lock when game is over
+    releaseWakeLock();
+
     switchScreen(gameOverScreen);
 
     const winnerAnnouncement = document.getElementById('winnerAnnouncement');
@@ -1375,6 +1518,9 @@ socket.on('gameReset', () => {
     gameStarted = false;
     currentPhase = 'lobby';
     myMafiaTeam = [];
+
+    // Release wake lock when game ends
+    releaseWakeLock();
 
     // Reset game settings to default
     currentGameSettings = { allowSpectatorView: false };
@@ -1508,6 +1654,7 @@ socket.on('error', (message) => {
 // Enhanced reconnection handling for mobile devices
 socket.on('disconnect', (reason) => {
     console.log('Disconnected:', reason);
+    stopHeartbeat(); // Stop heartbeat when disconnected
 
     // Don't immediately kick to join screen - show reconnecting message
     if (reason === 'io server disconnect') {
@@ -1517,19 +1664,39 @@ socket.on('disconnect', (reason) => {
     } else {
         // Network issue or mobile backgrounding - try to reconnect
         showNotification('Connection lost. Reconnecting...', 'warning');
+
+        // Ensure we try to reconnect
+        setTimeout(() => {
+            if (!socket.connected) {
+                console.log('Manual reconnection attempt...');
+                socket.connect();
+            }
+        }, 1000);
+    }
+});
+
+socket.on('connect', () => {
+    console.log('Connected to server:', socket.id);
+    startHeartbeat(); // Start heartbeat when connected
+
+    // If we have player info, this is a reconnection
+    if (myPlayerName && gameStarted) {
+        console.log('Reconnecting as', myPlayerName);
+        showNotification('Connection established!', 'success');
     }
 });
 
 socket.on('reconnect_attempt', (attemptNumber) => {
     console.log('Reconnection attempt:', attemptNumber);
-    if (attemptNumber === 1) {
-        showNotification('Reconnecting...', 'info');
+    if (attemptNumber % 5 === 1) { // Show notification every 5 attempts
+        showNotification(`Reconnecting... (attempt ${attemptNumber})`, 'info');
     }
 });
 
 socket.on('reconnect', (attemptNumber) => {
     console.log('Reconnected after', attemptNumber, 'attempts');
     showNotification('Reconnected successfully!', 'success');
+    startHeartbeat(); // Ensure heartbeat is running
 
     // Re-sync with server if we were in a game
     if (myPlayerName && myPlayerId) {
@@ -1545,7 +1712,19 @@ socket.on('reconnect_error', (error) => {
 socket.on('reconnect_failed', () => {
     console.log('Reconnection failed after all attempts');
     showNotification('Could not reconnect. Please refresh and rejoin.', 'error');
+    stopHeartbeat();
     setTimeout(() => switchScreen(joinScreen), 5000);
+});
+
+// Handle heartbeat acknowledgment
+socket.on('heartbeat_ack', (data) => {
+    // Connection is alive and healthy
+    console.log('Heartbeat acknowledged');
+
+    // Notify worker of heartbeat acks
+    if (connectionWorker) {
+        connectionWorker.postMessage({ type: 'HEARTBEAT_ACK' });
+    }
 });
 
 // Helper Functions
@@ -1615,8 +1794,8 @@ function updateVotingGrid(players) {
     const grid = document.getElementById('votingGrid');
     grid.innerHTML = '';
 
-    // Only show alive and connected players (exclude God/host)
-    const alivePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
+    // Show ALL alive players including disconnected (exclude God/host)
+    const alivePlayers = players.filter(p => p.isAlive && p.role !== 'God');
 
     alivePlayers.forEach(player => {
         if (player.id === myPlayerId) return; // Can't vote for yourself
@@ -1626,7 +1805,10 @@ function updateVotingGrid(players) {
         card.dataset.playerId = player.id; // Store player ID for vote count updates
         card.dataset.playerName = player.name;
         card.innerHTML = `
-            <div class="voting-player-name">${player.name}</div>
+            <div class="voting-player-name">
+                ${player.name}
+                ${player.isDisconnected ? '<span class="disconnected-badge">⚠️ Offline</span>' : ''}
+            </div>
             <button class="view-votes-btn" onclick="event.stopPropagation(); showVoteDetails('${player.id}', '${player.name}')">
                 👁️ See Voters
             </button>
@@ -1645,8 +1827,8 @@ function updateVotingGridRevote(players, tiedCandidateIds) {
     const grid = document.getElementById('votingGrid');
     grid.innerHTML = '<div class="revote-notice">⚠️ Vote for one of the tied candidates:</div>';
 
-    // Only show tied candidates who are alive and connected (exclude God/host and self)
-    const tiedPlayers = players.filter(p => tiedCandidateIds.includes(p.id) && p.isAlive && !p.isDisconnected && p.role !== 'God' && p.id !== myPlayerId);
+    // Show tied candidates who are alive (include disconnected, exclude God/host and self)
+    const tiedPlayers = players.filter(p => tiedCandidateIds.includes(p.id) && p.isAlive && p.role !== 'God' && p.id !== myPlayerId);
 
     tiedPlayers.forEach(player => {
         const card = document.createElement('div');
@@ -1654,7 +1836,10 @@ function updateVotingGridRevote(players, tiedCandidateIds) {
         card.dataset.playerId = player.id; // Store player ID for vote count updates
         card.dataset.playerName = player.name;
         card.innerHTML = `
-            <div class="voting-player-name">${player.name}</div>
+            <div class="voting-player-name">
+                ${player.name}
+                ${player.isDisconnected ? '<span class="disconnected-badge">⚠️ Offline</span>' : ''}
+            </div>
             <div class="tied-badge">TIED</div>
             <button class="view-votes-btn" onclick="event.stopPropagation(); showVoteDetails('${player.id}', '${player.name}')">
                 👁️ See Voters

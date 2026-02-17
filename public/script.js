@@ -5,17 +5,26 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
     ? window.location.origin
     : 'https://mafia-game-x5pu.onrender.com'; // Replace with your actual Render URL
 
+// Detect mobile devices
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Mobile gets more frequent heartbeat
+const HEARTBEAT_INTERVAL = isMobileDevice() ? 5000 : 10000;
+
 // Socket.IO with aggressive reconnection for mobile devices
 const socket = io(BACKEND_URL, {
     reconnection: true,
-    reconnectionDelay: 500,           // Start reconnecting after 500ms
-    reconnectionDelayMax: 5000,       // Max delay between reconnection attempts
+    reconnectionDelay: 300,           // Faster: 300ms (was 500ms)
+    reconnectionDelayMax: 3000,       // Faster: 3s (was 5s)
     reconnectionAttempts: Infinity,   // Never stop trying to reconnect
     timeout: 20000,                   // Connection timeout (20 seconds)
     transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
     upgrade: true,
     rememberUpgrade: true,
-    forceNew: false
+    forceNew: false,
+    randomizationFactor: 0.5          // Add jitter to prevent thundering herd
 });
 
 // Heartbeat mechanism to keep connection alive
@@ -24,12 +33,16 @@ let heartbeatInterval = null;
 function startHeartbeat() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
 
-    // Send heartbeat every 10 seconds to keep connection alive
+    // Send heartbeat based on device type (mobile: 5s, desktop: 10s)
     heartbeatInterval = setInterval(() => {
         if (socket.connected) {
-            socket.emit('heartbeat', { playerId: myPlayerId, timestamp: Date.now() });
+            socket.emit('heartbeat', {
+                playerId: myPlayerId,
+                timestamp: Date.now(),
+                isMobile: isMobileDevice()
+            });
         }
-    }, 10000);
+    }, HEARTBEAT_INTERVAL);
 }
 
 function stopHeartbeat() {
@@ -67,6 +80,36 @@ window.addEventListener('beforeunload', (e) => {
 
 // Start heartbeat when page loads
 startHeartbeat();
+
+// Initialize Web Worker for mobile devices
+let connectionWorker = null;
+
+function initConnectionWorker() {
+    if ('Worker' in window && isMobileDevice()) {
+        try {
+            connectionWorker = new Worker('connection-worker.js');
+
+            connectionWorker.addEventListener('message', (e) => {
+                if (e.data.type === 'SEND_HEARTBEAT' && socket.connected) {
+                    socket.emit('heartbeat', {
+                        playerId: myPlayerId,
+                        timestamp: e.data.timestamp,
+                        fromWorker: true
+                    });
+                }
+            });
+
+            connectionWorker.postMessage({
+                type: 'START_HEARTBEAT',
+                data: { interval: HEARTBEAT_INTERVAL }
+            });
+
+            console.log('Connection worker initialized');
+        } catch (err) {
+            console.warn('Worker init failed:', err);
+        }
+    }
+}
 
 // Wake Lock API to prevent mobile devices from sleeping during game
 let wakeLock = null;
@@ -738,6 +781,9 @@ if (btnCancelTransferLobby) {
 socket.on('connect', () => {
     myPlayerId = socket.id;
     console.log('Connected with socket ID:', myPlayerId);
+
+    // Initialize connection worker on connect (for mobile)
+    initConnectionWorker();
 });
 
 socket.on('joinedGame', (data) => {
@@ -1049,7 +1095,8 @@ socket.on('nightActionUpdate', (data) => {
         data.players.forEach(player => {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-danger';
-            btn.textContent = player.name;
+            btn.textContent = `${player.name}${player.isDisconnected ? ' ⚠️' : ''}`;
+            btn.title = player.isDisconnected ? 'Player is offline but can still be targeted' : '';
             btn.onclick = () => socket.emit('godMarkKill', player.id);
             selection.appendChild(btn);
         });
@@ -1060,7 +1107,8 @@ socket.on('nightActionUpdate', (data) => {
         data.players.forEach(player => {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-success';
-            btn.textContent = player.name;
+            btn.textContent = `${player.name}${player.isDisconnected ? ' ⚠️' : ''}`;
+            btn.title = player.isDisconnected ? 'Player is offline but can still be targeted' : '';
             btn.onclick = () => socket.emit('godMarkSave', player.id);
             selection.appendChild(btn);
         });
@@ -1071,7 +1119,8 @@ socket.on('nightActionUpdate', (data) => {
         data.players.forEach(player => {
             const btn = document.createElement('button');
             btn.className = 'btn btn-sm btn-primary';
-            btn.textContent = player.name;
+            btn.textContent = `${player.name}${player.isDisconnected ? ' ⚠️' : ''}`;
+            btn.title = player.isDisconnected ? 'Player is offline but can still be targeted' : '';
             btn.onclick = () => socket.emit('godInvestigate', player.id);
             selection.appendChild(btn);
         });
@@ -1671,6 +1720,11 @@ socket.on('reconnect_failed', () => {
 socket.on('heartbeat_ack', (data) => {
     // Connection is alive and healthy
     console.log('Heartbeat acknowledged');
+
+    // Notify worker of heartbeat acks
+    if (connectionWorker) {
+        connectionWorker.postMessage({ type: 'HEARTBEAT_ACK' });
+    }
 });
 
 // Helper Functions
@@ -1740,8 +1794,8 @@ function updateVotingGrid(players) {
     const grid = document.getElementById('votingGrid');
     grid.innerHTML = '';
 
-    // Only show alive and connected players (exclude God/host)
-    const alivePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
+    // Show ALL alive players including disconnected (exclude God/host)
+    const alivePlayers = players.filter(p => p.isAlive && p.role !== 'God');
 
     alivePlayers.forEach(player => {
         if (player.id === myPlayerId) return; // Can't vote for yourself
@@ -1751,7 +1805,10 @@ function updateVotingGrid(players) {
         card.dataset.playerId = player.id; // Store player ID for vote count updates
         card.dataset.playerName = player.name;
         card.innerHTML = `
-            <div class="voting-player-name">${player.name}</div>
+            <div class="voting-player-name">
+                ${player.name}
+                ${player.isDisconnected ? '<span class="disconnected-badge">⚠️ Offline</span>' : ''}
+            </div>
             <button class="view-votes-btn" onclick="event.stopPropagation(); showVoteDetails('${player.id}', '${player.name}')">
                 👁️ See Voters
             </button>
@@ -1770,8 +1827,8 @@ function updateVotingGridRevote(players, tiedCandidateIds) {
     const grid = document.getElementById('votingGrid');
     grid.innerHTML = '<div class="revote-notice">⚠️ Vote for one of the tied candidates:</div>';
 
-    // Only show tied candidates who are alive and connected (exclude God/host and self)
-    const tiedPlayers = players.filter(p => tiedCandidateIds.includes(p.id) && p.isAlive && !p.isDisconnected && p.role !== 'God' && p.id !== myPlayerId);
+    // Show tied candidates who are alive (include disconnected, exclude God/host and self)
+    const tiedPlayers = players.filter(p => tiedCandidateIds.includes(p.id) && p.isAlive && p.role !== 'God' && p.id !== myPlayerId);
 
     tiedPlayers.forEach(player => {
         const card = document.createElement('div');
@@ -1779,7 +1836,10 @@ function updateVotingGridRevote(players, tiedCandidateIds) {
         card.dataset.playerId = player.id; // Store player ID for vote count updates
         card.dataset.playerName = player.name;
         card.innerHTML = `
-            <div class="voting-player-name">${player.name}</div>
+            <div class="voting-player-name">
+                ${player.name}
+                ${player.isDisconnected ? '<span class="disconnected-badge">⚠️ Offline</span>' : ''}
+            </div>
             <div class="tied-badge">TIED</div>
             <button class="view-votes-btn" onclick="event.stopPropagation(); showVoteDetails('${player.id}', '${player.name}')">
                 👁️ See Voters

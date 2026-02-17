@@ -19,8 +19,8 @@ const io = socketIO(server, {
     credentials: true
   },
   // Aggressive timeouts to prevent disconnections on mobile
-  pingTimeout: 120000,     // Wait 2 minutes for ping response before disconnecting
-  pingInterval: 15000,     // Send ping every 15 seconds to keep connection alive
+  pingTimeout: 180000,     // Wait 3 minutes for ping response before disconnecting (increased from 120s)
+  pingInterval: 8000,      // Send ping every 8 seconds to keep connection alive (reduced from 15s)
   upgradeTimeout: 30000,   // Time to wait for upgrade
   allowUpgrades: true,
   transports: ['websocket', 'polling'],
@@ -313,7 +313,7 @@ io.on('connection', (socket) => {
   socket.on('godWakeMafia', () => {
     if (socket.id !== hostId) return;
     gameState.currentNightAction = 'mafia';
-    const eligiblePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
+    const eligiblePlayers = players.filter(p => p.isAlive && p.role !== 'God');
     io.to(hostId).emit('nightActionUpdate', { action: 'mafia', players: eligiblePlayers });
   });
 
@@ -336,7 +336,7 @@ io.on('connection', (socket) => {
     }
 
     gameState.currentNightAction = 'doctor';
-    const availablePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God' && !gameState.doctorSaveHistory.includes(p.id));
+    const availablePlayers = players.filter(p => p.isAlive && p.role !== 'God' && !gameState.doctorSaveHistory.includes(p.id));
     io.to(hostId).emit('nightActionUpdate', {
       action: 'doctor',
       players: availablePlayers,
@@ -369,7 +369,7 @@ io.on('connection', (socket) => {
 
     gameState.currentNightAction = 'detective';
     // Detective cannot investigate themselves - exclude detective from eligible players
-    const eligiblePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God' && p.role !== 'Detective');
+    const eligiblePlayers = players.filter(p => p.isAlive && p.role !== 'God' && p.role !== 'Detective');
     io.to(hostId).emit('nightActionUpdate', { action: 'detective', players: eligiblePlayers });
   });
 
@@ -564,12 +564,12 @@ io.on('connection', (socket) => {
 
     console.log(`${voter.name} voted for ${players.find(p => p.id === targetId)?.name}`);
 
-    // Check if all alive players have voted
-    const alivePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
+    // Check if all alive CONNECTED players have voted
+    const connectedAlivePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
     const totalVotes = Object.keys(gameState.votes).length;
 
-    if (totalVotes === alivePlayers.length && totalVotes > 0) {
-      // All players have voted - notify host
+    if (totalVotes === connectedAlivePlayers.length && connectedAlivePlayers.length > 0) {
+      // All connected players have voted - notify host
       const phaseMessage =
         gameState.phase === 'tentativeVoting'
           ? 'All players have voted! You can now start Final Voting or continue discussion.'
@@ -583,7 +583,7 @@ io.on('connection', (socket) => {
         voteCounts
       });
 
-      console.log('All players have voted!');
+      console.log('All connected players have voted!');
     }
   });
 
