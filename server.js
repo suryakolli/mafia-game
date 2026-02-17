@@ -49,7 +49,8 @@ let gameState = {
   timerDuration: 0,
   history: [], // array of round events
   tiedCandidates: [], // array of player IDs who are tied (for revote)
-  revoteCount: 0 // track number of revotes
+  revoteCount: 0, // track number of revotes
+  lastDeathInfo: null // store last death info for reconnecting players
 };
 let gameSettings = {
   allowSpectatorView: false  // Default: spectator view disabled for security
@@ -83,9 +84,24 @@ io.on('connection', (socket) => {
     const existingPlayer = players.find(p => p.name === playerName);
 
     if (existingPlayer && gameStarted) {
-      // Player is reconnecting
+      // Player is reconnecting - store old ID for vote update
+      const oldPlayerId = existingPlayer.id;
       existingPlayer.id = socket.id;
       existingPlayer.isDisconnected = false;
+
+      // Update votes to use new socket ID
+      // 1. Update votes BY this player (voter ID)
+      if (gameState.votes[oldPlayerId]) {
+        gameState.votes[socket.id] = gameState.votes[oldPlayerId];
+        delete gameState.votes[oldPlayerId];
+      }
+
+      // 2. Update votes FOR this player (target ID)
+      Object.keys(gameState.votes).forEach(voterId => {
+        if (gameState.votes[voterId] === oldPlayerId) {
+          gameState.votes[voterId] = socket.id;
+        }
+      });
 
       // If they were the host, restore host status and resume game
       if (existingPlayer.isHost) {
@@ -116,12 +132,15 @@ io.on('connection', (socket) => {
         isAlive: existingPlayer.isAlive
       });
 
-      // Send current phase first so client knows the game state
+      // Send game history so reconnected player knows what happened
+      socket.emit('historyUpdate', gameState.history);
+
+      // Send current phase with last death info if in day phase
       socket.emit('phaseUpdate', {
         phase: gameState.phase,
         round: gameState.round,
         players: players,
-        deathInfo: null,
+        deathInfo: gameState.phase === 'day' ? gameState.lastDeathInfo : null,
         gameSettings: gameSettings
       });
 
@@ -140,12 +159,13 @@ io.on('connection', (socket) => {
         socket.emit('roleAssigned', roleData);
       }
 
-      // If in voting phase, send current votes to reconnected player
+      // If in voting phase, send current votes to ALL players (not just reconnected player)
+      // This ensures everyone has synced vote state
       if (gameState.phase === 'tentativeVoting' || gameState.phase === 'finalVoting' || gameState.phase === 'tieRevote') {
         const voteCounts = getVoteCounts();
         const voteDetails = getVoteDetails();
 
-        // Send vote update to everyone including reconnected player
+        // Send vote update to everyone to ensure sync
         io.emit('voteUpdate', {
           voterId: null,
           voterName: null,
@@ -277,6 +297,7 @@ io.on('connection', (socket) => {
     gameState.draftKill = null;
     gameState.draftSave = null;
     gameState.actualKill = null;
+    gameState.lastDeathInfo = null; // Clear last death info when starting new night
     gameState.detectiveInvestigation = {
       target: null,
       targetName: null,
@@ -425,6 +446,9 @@ io.on('connection', (socket) => {
           playerName: players.find(p => p.id === gameState.actualKill)?.name
         }
       : { died: false };
+
+    // Store death info for reconnecting players
+    gameState.lastDeathInfo = deathInfo;
 
     io.emit('phaseUpdate', {
       phase: 'day',
@@ -760,7 +784,8 @@ function resetGameState() {
     timerDuration: 0,
     history: [],
     tiedCandidates: [],
-    revoteCount: 0
+    revoteCount: 0,
+    lastDeathInfo: null
   };
 }
 

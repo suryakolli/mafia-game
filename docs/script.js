@@ -158,6 +158,7 @@ let currentPhase = 'lobby';
 let allPlayers = [];
 let myMafiaTeam = [];
 let currentGameSettings = { allowSpectatorView: false };
+let isReconnecting = false; // Track if player is reconnecting
 
 // Role reveal state
 let roleRevealed = false;
@@ -814,10 +815,13 @@ socket.on('connect', () => {
 socket.on('joinedGame', (data) => {
     isHost = data.isHost;
 
-    // If reconnected, update player name from server
+    // If reconnected, update player name from server and set reconnecting flag
     if (data.reconnected && data.playerName) {
         myPlayerName = data.playerName;
         isAlive = data.isAlive;
+        isReconnecting = true; // Set flag for reconnection
+    } else {
+        isReconnecting = false;
     }
 
     switchScreen(lobbyScreen);
@@ -902,6 +906,7 @@ socket.on('roleAssigned', (roleData) => {
 });
 
 socket.on('phaseUpdate', (data) => {
+    const wasReconnecting = isReconnecting; // Store reconnection status before processing
     currentPhase = data.phase;
     allPlayers = data.players;
 
@@ -992,14 +997,18 @@ socket.on('phaseUpdate', (data) => {
                 deathAnnouncement.innerHTML = `<div class="announcement-death-big">💀 ${data.deathInfo.playerName} was killed during the night</div>`;
                 deathAnnouncement.style.display = 'block';
 
-                // Show center announcement for reconnecting host
-                showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
+                // Show center announcement ONLY for reconnecting host
+                if (wasReconnecting) {
+                    showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
+                }
             } else if (data.deathInfo && !data.deathInfo.died) {
                 deathAnnouncement.innerHTML = '<div class="announcement-safe-big">✅ No one died during the night</div>';
                 deathAnnouncement.style.display = 'block';
 
-                // Show center announcement for reconnecting host
-                showCenterAnnouncement('No one died during the night', 'safe');
+                // Show center announcement ONLY for reconnecting host
+                if (wasReconnecting) {
+                    showCenterAnnouncement('No one died during the night', 'safe');
+                }
             } else {
                 deathAnnouncement.style.display = 'none';
             }
@@ -1016,14 +1025,18 @@ socket.on('phaseUpdate', (data) => {
                 playerDeathAnnouncement.innerHTML = `<div class="announcement-death-big">💀 ${data.deathInfo.playerName} was killed during the night</div>`;
                 playerDeathAnnouncement.style.display = 'block';
 
-                // Show center announcement for reconnecting players
-                showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
+                // Show center announcement ONLY for reconnecting players
+                if (wasReconnecting) {
+                    showCenterAnnouncement(`${data.deathInfo.playerName} was killed during the night`, 'death');
+                }
             } else if (data.deathInfo && !data.deathInfo.died) {
                 playerDeathAnnouncement.innerHTML = '<div class="announcement-safe-big">✅ No one died during the night</div>';
                 playerDeathAnnouncement.style.display = 'block';
 
-                // Show center announcement for reconnecting players
-                showCenterAnnouncement('No one died during the night', 'safe');
+                // Show center announcement ONLY for reconnecting players
+                if (wasReconnecting) {
+                    showCenterAnnouncement('No one died during the night', 'safe');
+                }
             } else {
                 playerDeathAnnouncement.style.display = 'none';
             }
@@ -1032,6 +1045,11 @@ socket.on('phaseUpdate', (data) => {
         } else {
             switchScreen(spectatorScreen);
             updateSpectatorView(data);
+        }
+
+        // Clear reconnecting flag after processing day phase
+        if (wasReconnecting) {
+            isReconnecting = false;
         }
     } else if (data.phase === 'tentativeVoting' || data.phase === 'finalVoting' || data.phase === 'tieRevote') {
         const isTentative = data.phase === 'tentativeVoting';
