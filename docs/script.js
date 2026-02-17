@@ -723,14 +723,19 @@ if (btnBackToLobbyFromWaiting) {
     });
 }
 
-// Role reveal functionality with auto-hide
-let roleRevealTimeout = null;
+// Role reveal functionality with manual toggle
+let roleRevealStates = {}; // Track reveal state for each button
 
 function setupRoleRevealButton(buttonId, displayId) {
     const button = document.getElementById(buttonId);
     const display = document.getElementById(displayId);
 
     if (button && display) {
+        // Initialize reveal state
+        if (!roleRevealStates[buttonId]) {
+            roleRevealStates[buttonId] = false;
+        }
+
         button.addEventListener('click', () => {
             // Host (God) doesn't need to reveal role
             if (isHost || myRole === 'God') {
@@ -743,34 +748,32 @@ function setupRoleRevealButton(buttonId, displayId) {
                 return;
             }
 
-            // Clear any existing timeout
-            if (roleRevealTimeout) {
-                clearTimeout(roleRevealTimeout);
-            }
+            // Toggle reveal state
+            if (!roleRevealStates[buttonId]) {
+                // Show role
+                let roleText = `Your role: ${getRoleEmoji(myRole)} ${myRole}`;
 
-            // Show role with neutral colors
-            let roleText = `Your role: ${getRoleEmoji(myRole)} ${myRole}`;
+                // If mafia, show team members
+                if (myRole === 'Mafia' && myMafiaTeam && myMafiaTeam.length > 0) {
+                    roleText += `\n\nYour Mafia team:\n${myMafiaTeam.map(name => `🔪 ${name}`).join('\n')}`;
+                }
 
-            // If mafia, show team members
-            if (myRole === 'Mafia' && myMafiaTeam && myMafiaTeam.length > 0) {
-                roleText += `\n\nYour Mafia team:\n${myMafiaTeam.map(name => `🔪 ${name}`).join('\n')}`;
-            }
+                display.textContent = roleText;
+                display.className = 'my-role-display role-reveal-active';
+                display.style.display = 'block';
+                display.style.whiteSpace = 'pre-line';
 
-            display.textContent = roleText;
-            display.className = 'my-role-display role-reveal-active';
-            display.style.display = 'block';
-            display.style.whiteSpace = 'pre-line';
-
-            // Update button
-            button.disabled = true;
-            button.textContent = 'Hiding in 5 seconds...';
-
-            // Auto-hide after 5 seconds
-            roleRevealTimeout = setTimeout(() => {
+                // Update button
+                button.textContent = '🙈 Hide My Role';
+                button.classList.add('btn-hide-role');
+                roleRevealStates[buttonId] = true;
+            } else {
+                // Hide role
                 display.style.display = 'none';
-                button.disabled = false;
                 button.textContent = '👁️ Reveal My Role';
-            }, 5000);
+                button.classList.remove('btn-hide-role');
+                roleRevealStates[buttonId] = false;
+            }
         });
     }
 }
@@ -1233,12 +1236,31 @@ socket.on('voteUpdate', (data) => {
     if (isHost) {
         const voteResults = document.getElementById('voteResults');
 
-        // Calculate voting progress
-        const alivePlayers = allPlayers.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
+        // Calculate voting progress - include ALL alive players (even disconnected)
+        const alivePlayers = allPlayers.filter(p => p.isAlive && p.role !== 'God');
         const totalVoters = alivePlayers.length;
         const votedCount = Object.keys(currentVoteDetails).reduce((sum, targetId) => {
             return sum + (currentVoteDetails[targetId] ? currentVoteDetails[targetId].length : 0);
         }, 0);
+
+        // Show which players haven't voted (including disconnected status)
+        const votedPlayerIds = new Set();
+        Object.values(currentVoteDetails).forEach(voters => {
+            voters.forEach(voter => votedPlayerIds.add(voter.voterId));
+        });
+
+        const notVotedPlayers = alivePlayers.filter(p => !votedPlayerIds.has(p.id));
+        const notVotedHTML = notVotedPlayers.length > 0
+            ? `<div class="not-voted-list">
+                <p style="font-weight: bold; margin-bottom: 8px;">Waiting for votes from:</p>
+                ${notVotedPlayers.map(p => `
+                    <span class="not-voted-player">
+                        ${p.name}
+                        ${p.isDisconnected ? '<span class="disconnected-badge">⚠️ Offline</span>' : ''}
+                    </span>
+                `).join('')}
+            </div>`
+            : '';
 
         voteResults.innerHTML = `
             <h4>Current Votes:</h4>
@@ -1248,6 +1270,7 @@ socket.on('voteUpdate', (data) => {
                     <div class="vote-progress-fill" style="width: ${(votedCount / totalVoters) * 100}%"></div>
                 </div>
             </div>
+            ${notVotedHTML}
         `;
 
         data.voteCounts.forEach(v => {

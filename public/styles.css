@@ -1985,3 +1985,43 @@ input[type="text"]:focus {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
 }
+
+/* Not voted players list for host */
+.not-voted-list {
+    background: #fef3c7;
+    border: 2px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 15px;
+}
+
+.not-voted-player {
+    display: inline-block;
+    background: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin: 4px;
+    font-weight: 500;
+    border: 1px solid #fbbf24;
+}
+
+.not-voted-player .disconnected-badge {
+    margin-left: 6px;
+}
+
+/* Hide role button styling */
+.btn-hide-role {
+    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+    animation: hide-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes hide-pulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 5px 15px rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        transform: scale(1.02);
+        box-shadow: 0 8px 20px rgba(239, 68, 68, 0.6);
+    }
+}

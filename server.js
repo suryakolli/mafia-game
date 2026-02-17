@@ -50,7 +50,8 @@ let gameState = {
   history: [], // array of round events
   tiedCandidates: [], // array of player IDs who are tied (for revote)
   revoteCount: 0, // track number of revotes
-  lastDeathInfo: null // store last death info for reconnecting players
+  lastDeathInfo: null, // store last death info for reconnecting players
+  lastEliminationInfo: null // store last elimination info for reconnecting players
 };
 let gameSettings = {
   allowSpectatorView: false  // Default: spectator view disabled for security
@@ -134,6 +135,11 @@ io.on('connection', (socket) => {
 
       // Send game history so reconnected player knows what happened
       socket.emit('historyUpdate', gameState.history);
+
+      // Send last elimination info if there was one recently
+      if (gameState.lastEliminationInfo) {
+        socket.emit('voteResult', gameState.lastEliminationInfo);
+      }
 
       // Send current phase with last death info if in day phase
       socket.emit('phaseUpdate', {
@@ -298,6 +304,7 @@ io.on('connection', (socket) => {
     gameState.draftSave = null;
     gameState.actualKill = null;
     gameState.lastDeathInfo = null; // Clear last death info when starting new night
+    gameState.lastEliminationInfo = null; // Clear last elimination info when starting new night
     gameState.detectiveInvestigation = {
       target: null,
       targetName: null,
@@ -588,12 +595,12 @@ io.on('connection', (socket) => {
 
     console.log(`${voter.name} voted for ${players.find(p => p.id === targetId)?.name}`);
 
-    // Check if all alive CONNECTED players have voted
-    const connectedAlivePlayers = players.filter(p => p.isAlive && !p.isDisconnected && p.role !== 'God');
+    // Check if all alive players have voted (including disconnected - God will ask them to reconnect)
+    const alivePlayers = players.filter(p => p.isAlive && p.role !== 'God');
     const totalVotes = Object.keys(gameState.votes).length;
 
-    if (totalVotes === connectedAlivePlayers.length && connectedAlivePlayers.length > 0) {
-      // All connected players have voted - notify host
+    if (totalVotes === alivePlayers.length && alivePlayers.length > 0) {
+      // All players have voted - notify host
       const phaseMessage =
         gameState.phase === 'tentativeVoting'
           ? 'All players have voted! You can now start Final Voting or continue discussion.'
@@ -607,7 +614,7 @@ io.on('connection', (socket) => {
         voteCounts
       });
 
-      console.log('All connected players have voted!');
+      console.log('All players have voted!');
     }
   });
 
@@ -785,7 +792,8 @@ function resetGameState() {
     history: [],
     tiedCandidates: [],
     revoteCount: 0,
-    lastDeathInfo: null
+    lastDeathInfo: null,
+    lastEliminationInfo: null
   };
 }
 
@@ -989,21 +997,31 @@ function processVotingEnd() {
       eliminatePlayer(t.playerId, 'tie vote after max revotes');
     });
 
-    io.emit('voteResult', {
+    const eliminationInfo = {
       eliminated: tied.map(t => ({ playerId: t.playerId, playerName: t.playerName })),
       reason: 'tie_max_revotes',
       voteCounts
-    });
+    };
+
+    // Store for reconnecting players
+    gameState.lastEliminationInfo = eliminationInfo;
+
+    io.emit('voteResult', eliminationInfo);
   } else {
     // Single elimination (or tie in tentative voting)
     const toEliminate = tied[0];
     eliminatePlayer(toEliminate.playerId, tied.length > 1 ? 'tie vote' : 'majority vote');
 
-    io.emit('voteResult', {
+    const eliminationInfo = {
       eliminated: [{ playerId: toEliminate.playerId, playerName: toEliminate.playerName }],
       reason: tied.length > 1 ? 'tie' : 'majority',
       voteCounts
-    });
+    };
+
+    // Store for reconnecting players
+    gameState.lastEliminationInfo = eliminationInfo;
+
+    io.emit('voteResult', eliminationInfo);
   }
 
   // Check win condition after a delay to allow elimination announcement to be seen
