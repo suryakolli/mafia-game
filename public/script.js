@@ -231,12 +231,27 @@ if (reconnectBtn) {
     });
 }
 
-// Check for saved player name on page load
+// Check for saved player name on page load and auto-reconnect if needed
 window.addEventListener('load', () => {
     const savedName = localStorage.getItem('mafiaGamePlayerName');
+    const autoReconnect = localStorage.getItem('mafiaGameAutoReconnect');
+
     if (savedName && reconnectPlayerNameSpan) {
         playerNameInput.value = savedName; // Pre-fill the name input
         reconnectPlayerNameSpan.textContent = savedName;
+    }
+
+    // Auto-reconnect if flag is set (after page reload from reconnection)
+    if (autoReconnect === 'true' && savedName) {
+        // Clear the flag
+        localStorage.removeItem('mafiaGameAutoReconnect');
+
+        // Auto-join after short delay to ensure socket connection is ready
+        setTimeout(() => {
+            console.log('Auto-reconnecting as:', savedName);
+            myPlayerName = savedName;
+            socket.emit('joinGame', savedName);
+        }, 500);
     }
 });
 
@@ -732,11 +747,15 @@ function setupRoleRevealButton(buttonId, displayId) {
 
     if (button && display) {
         // Initialize reveal state
-        if (!roleRevealStates[buttonId]) {
+        if (roleRevealStates[buttonId] === undefined) {
             roleRevealStates[buttonId] = false;
         }
 
-        button.addEventListener('click', () => {
+        // Remove any existing listeners to prevent duplicates
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+
+        newButton.addEventListener('click', () => {
             // Host (God) doesn't need to reveal role
             if (isHost || myRole === 'God') {
                 showNotification('You are the host - no role to reveal');
@@ -764,14 +783,18 @@ function setupRoleRevealButton(buttonId, displayId) {
                 display.style.whiteSpace = 'pre-line';
 
                 // Update button
-                button.textContent = '🙈 Hide My Role';
-                button.classList.add('btn-hide-role');
+                newButton.textContent = '🙈 Hide My Role';
+                newButton.classList.add('btn-hide-role');
                 roleRevealStates[buttonId] = true;
             } else {
                 // Hide role
                 display.style.display = 'none';
-                button.textContent = '👁️ Reveal My Role';
-                button.classList.remove('btn-hide-role');
+                display.className = 'my-role-display';
+                display.textContent = '';
+
+                // Update button
+                newButton.textContent = '👁️ Reveal My Role';
+                newButton.classList.remove('btn-hide-role');
                 roleRevealStates[buttonId] = false;
             }
         });
@@ -818,11 +841,23 @@ socket.on('connect', () => {
 socket.on('joinedGame', (data) => {
     isHost = data.isHost;
 
-    // If reconnected, update player name from server and set reconnecting flag
+    // If reconnected, reload page to get fresh state
     if (data.reconnected && data.playerName) {
         myPlayerName = data.playerName;
         isAlive = data.isAlive;
-        isReconnecting = true; // Set flag for reconnection
+
+        // Set flag for auto-reconnect after reload
+        localStorage.setItem('mafiaGameAutoReconnect', 'true');
+
+        // Show reconnection message and reload
+        showNotification('Reconnected! Reloading to sync game state...', 'success');
+
+        // Reload after short delay to show notification
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+
+        return; // Don't continue with normal join flow
     } else {
         isReconnecting = false;
     }
